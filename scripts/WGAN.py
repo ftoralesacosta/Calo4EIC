@@ -5,7 +5,7 @@ from tensorflow import keras
 from tensorflow.keras import layers, Input
 import time
 from tensorflow.keras.callbacks import ReduceLROnPlateau,EarlyStopping
-import horovod.tensorflow.keras as hvd
+# import horovod.tensorflow.keras as hvd
 import argparse
 # import tensorflow_addons as tfa
 
@@ -46,7 +46,7 @@ class WGAN(keras.Model):
 
         self.discriminator = self.ConvDiscriminator(inputs_cond)
         self.generator = self.ConvGenerator(inputs_cond)
-        self.verbose = 1 if hvd.rank() == 0 else 0 #show progress only for first rank
+        # self.verbose = 1 if hvd.rank() == 0 else 0 #show progress only for first rank
         if self.verbose:
             #print(self.discriminator.summary())
             print(self.generator.summary())

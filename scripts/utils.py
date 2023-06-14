@@ -18,18 +18,21 @@ def split_data(data,nevts,frac=0.8):
 line_style = {
     'Geant4':'dotted',
     'CaloScore':'-',
-    'WGAN-GP':'-',
+    'FPCD':'--',
+    # 'WGAN-GP':'-',
 }
 
 colors = {
     'Geant4':'black',
     'CaloScore':'#7570b3',
-    'WGAN-GP':'#e7298a',
+    'FPCD':'darkorange',
+    # 'WGAN-GP':'#e7298a',
 }
 
 name_translate={
     'CaloScore':'CaloScore',
-    'wgan':'WGAN-GP',
+    'FPCD':'FPCD',
+    # 'wgan':'WGAN-GP',
 }
 
 def SetStyle():

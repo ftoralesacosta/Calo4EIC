@@ -3,7 +3,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, Input
 import time
-import horovod.tensorflow.keras as hvd
+# import horovod.tensorflow.keras as hvd
 import utils
 from architectures import ConvModel, Unet, Resnet
 import time
@@ -40,7 +40,7 @@ class CaloScore(keras.Model):
         self.posterior_mean_coef2 = (1 - alphas_cumprod_prev) * tf.sqrt(alphas) / (1. - self.alphas_cumprod)
         
                 
-        self.verbose = 1 if hvd.rank() == 0 else 0 #show progress only for first rank
+        # self.verbose = 1 if hvd.rank() == 0 else 0 #show progress only for first rank
 
         #Convolutional model for 3D images and dense for flatten inputs
             

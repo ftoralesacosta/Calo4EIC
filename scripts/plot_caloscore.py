@@ -7,32 +7,33 @@ import h5py as h5
 import os
 import utils
 import tensorflow as tf
-import horovod.tensorflow.keras as hvd
+# import horovod.tensorflow.keras as hvd
 from CaloScore import CaloScore
 import gc
 from CaloScore_distill import CaloScore_distill
 from sklearn.metrics import roc_curve, auc
 from WGAN import WGAN
 import time
-hvd.init()
+# hvd.init()
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
 for gpu in gpus:
     tf.config.experimental.set_memory_growth(gpu, True)
-if gpus:
-    tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'GPU')
+# if gpus:
+#     tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'GPU')
 
 
-rank = hvd.rank()
-size = hvd.size()
+# rank = hvd.rank()
+# size = hvd.size()
 # tf.config.optimizer.set_experimental_options({'layout_optimizer': False})
 utils.SetStyle()
 
+nevents_hard = 100_000
 
 parser = argparse.ArgumentParser()
 
 #parser.add_argument('--data_folder', default='/pscratch/sd/v/vmikuni/FCC', help='Folder containing data and MC files')
-parser.add_argument('--data_folder', default='/global/cfs/cdirs/m3246/vmikuni/', help='Folder containing data and MC files')
+parser.add_argument('--data_folder', default='/global/ml4hep/spss/ftoralesacosta/FTA_Calo4EIC/Calo4EIC/scripts', help='Folder containing data and MC files')
 # parser.add_argument('--data_folder', default='/global/cfs/cdirs/m3929/SCRATCH/FCC/', help='Folder containing data and MC files')
 #parser.add_argument('--data_folder', default='/global/cfs/cdirs/m3929/FCC/', help='Folder containing data and MC files')
 parser.add_argument('--plot_folder', default='../plots', help='Folder to save results')
@@ -69,22 +70,22 @@ if flags.sample:
                                 logE=config['logE'])
         energies.append(e_)
 
-    energies = np.reshape(energies,(-1,1))
-    #print(energies)
+    energies = np.reshape(energies, (-1, 1))
+    # print(energies)
 
     if flags.model == 'wgan':
-        num_noise=config['NOISE_DIM']
+        num_noise = config['NOISE_DIM']
         model = WGAN(config['SHAPE_PAD'][1:],energies.shape[1],config=config,num_noise=num_noise)
         model.load_weights('{}/{}'.format(checkpoint_folder,'checkpoint')).expect_partial()
         start = time.time()
-        generated = model.generate(energies.shape[0],energies)
+        generated = model.generate(energies.shape[0], energies)
         end = time.time()
         print(end - start)
     else:
-        model = CaloScore(num_layer=config['NUM_LAYER'],config=config)
+        model = CaloScore(num_layer=config['NUM_LAYER'], config=config)
         if flags.distill:
             checkpoint_folder = '../checkpoints_{}_{}_d{}'.format(config['CHECKPOINT_NAME'],flags.model,flags.factor)
-            
+
             model = CaloScore_distill(model.ema_layer,model.ema_voxel,
                                       factor=flags.factor,
                                       num_layer = config['NUM_LAYER'],
@@ -118,17 +119,23 @@ if flags.sample:
     generated[generated<config['ECUT']] = 0 #min from samples
 
     print('generated_{}_{}.h5'.format(config['CHECKPOINT_NAME'],flags.model))
-    with h5.File(os.path.join(flags.data_folder,'generated_{}_{}_{}.h5'.format(config['CHECKPOINT_NAME'],flags.model,flags.factor)),"w") as h5f:
+    with h5.File(os.path.join(flags.data_folder,'CaloScore_images_5x5.h5'.format(config['CHECKPOINT_NAME'],flags.model,flags.factor)),"w") as h5f:
         dset = h5f.create_dataset("calo_images", data=np.reshape(generated,(generated.shape[0],-1)))
-        dset = h5f.create_dataset("truth_features", data=energies)
+        dset = h5f.create_dataset("cluster", data=energies)
 else:
 
     def LoadSamples(model):
         generated = []
         energies = []
-        with h5.File(os.path.join(flags.data_folder,'generated_{}_{}_{}.h5'.format(config['CHECKPOINT_NAME'],flags.model,flags.factor)),"r") as h5f:
-            generated.append(h5f['calo_images'][:])
-            energies.append(h5f['truth_features'][:,:1])
+        # with h5.File(os.path.join(flags.data_folder,'CaloScore_images_5x5.h5'.format(config['CHECKPOINT_NAME'],flags.model,flags.factor)),"r") as h5f:
+        with h5.File(os.path.join(flags.data_folder,f'{model}_images_5x5.h5'),"r") as h5f:
+            if (model == 'FPCD'):
+                energies.append(h5f['cluster_features'][-nevents_hard:, 1])
+                generated.append(h5f['calo_images'][-nevents_hard:])
+            else:
+                energies.append(h5f['cluster'][:,:1])
+                generated.append(h5f['calo_images'][:])
+        print("ENERGIES FOR MODEL", model, energies[-10:])
         energies = np.reshape(energies,(-1,1))
         print("Loaded {} Samples".format(energies.shape[0]))
         generated = np.reshape(generated,config['SHAPE'])
@@ -142,7 +149,7 @@ else:
                 emax = config['EMAX'],emin = config['EMIN'],
                 max_deposit=config['MAXDEP'], #noise can generate more deposited energy than generated
                 logE=config['logE'],
-                rank=hvd.rank(),size=hvd.size(),
+                # rank=hvd.rank(),size=hvd.size(),
                 use_1D = config['DATASET']==1,
             )
             voxel_ = utils.ApplyPreprocessing(
@@ -162,41 +169,43 @@ else:
             )
             energies = np.reshape(energies,(-1,1))
             generated = np.reshape(generated,config['SHAPE'])
-            return generated,energies
+            return generated, energies
 
     if flags.model != 'all':
-        models = ['CaloScore']
+        models = ['CaloScore', 'FPCD']
     else:
-        #models = ['VPSDE','subVPSDE','VESDE','wgan','vae']
-        models = ['CaloScore','wgan']
+        # models = ['VPSDE','subVPSDE','VESDE','wgan','vae']
+        # models = ['CaloScore', 'wgan']
+        models = ['CaloScore', 'FPCD']
 
     if flags.test:
-        data,energies = LoadTest(flags.nevts)
+        data, energies = LoadTest(flags.nevts)
         data_dict = {
             'CaloScore':data
         }
         data_dict['CaloScore'][data_dict['CaloScore']<config['ECUT']] = 0 #min from samples
 
-    else:        
+    else:
         energies = []
         data_dict = {}
         for model in models:
+            print("\n\n MODEL = ", model, "\n\n")
             if np.size(energies) == 0:
-                data,energies = LoadSamples(model)
-                data_dict[utils.name_translate[model]]=data
-                print(data_dict[utils.name_translate[model]])
+                data, energies = LoadSamples(model)
+                data_dict[utils.name_translate[model]] = data
+                # print(data_dict[utils.name_translate[model]])
             else:
                 data_dict[utils.name_translate[model]]=LoadSamples(model)[0]
-                
+
     total_evts = energies.shape[0]
 
-    
+
     data = []
     true_energies = []
     for dataset in config['EVAL']:
         with h5.File(os.path.join(flags.data_folder,dataset),"r") as h5f:
+            true_energies.append(h5f['cluster'][-total_evts:,:1])
             data.append(h5f['calo_images'][-total_evts:])
-            true_energies.append(h5f['truth_features'][-total_evts:,:1])
 
     
     data_dict['Geant4']=np.reshape(data,config['SHAPE'])
@@ -483,6 +492,7 @@ else:
                 
                 
                 bar = ax.set_title("{}, layer number {}".format(key,layer),fontsize=15)
+                ax.set_xlim(1,130)
 
                 fig.savefig('{}/FCC_{}2D_{}_{}_{}.pdf'.format(flags.plot_folder,key,layer,config['CHECKPOINT_NAME'],flags.model))
             

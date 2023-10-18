@@ -29,13 +29,11 @@ for gpu in gpus:
 utils.SetStyle()
 
 nevents_hard = 100_000
+nevents_hard = 10_000
 
 parser = argparse.ArgumentParser()
 
-#parser.add_argument('--data_folder', default='/pscratch/sd/v/vmikuni/FCC', help='Folder containing data and MC files')
-parser.add_argument('--data_folder', default='/global/ml4hep/spss/ftoralesacosta/FTA_Calo4EIC/Calo4EIC/scripts', help='Folder containing data and MC files')
-# parser.add_argument('--data_folder', default='/global/cfs/cdirs/m3929/SCRATCH/FCC/', help='Folder containing data and MC files')
-#parser.add_argument('--data_folder', default='/global/cfs/cdirs/m3929/FCC/', help='Folder containing data and MC files')
+parser.add_argument('--data_folder', default='./', help='Folder containing data and MC files')
 parser.add_argument('--plot_folder', default='../plots', help='Folder to save results')
 parser.add_argument('--config', default='config.json', help='Training parameters')
 parser.add_argument('--nevts', type=float,default=1e5, help='Number of events to load')
@@ -45,8 +43,6 @@ parser.add_argument('--model', default='CaloScore', help='Type of generative mod
 parser.add_argument('--distill', action='store_true', default=False,help='Use the distillation model')
 parser.add_argument('--test', action='store_true', default=False,help='Verify the reverse transform is correct')
 parser.add_argument('--factor', type=int,default=1, help='Step reduction for distillation model')
-
-
 
 
 parser.add_argument('--sample', action='store_true', default=False,help='Sample from learned model')
@@ -129,8 +125,9 @@ else:
         energies = []
         # with h5.File(os.path.join(flags.data_folder,'CaloScore_images_5x5.h5'.format(config['CHECKPOINT_NAME'],flags.model,flags.factor)),"r") as h5f:
         with h5.File(os.path.join(flags.data_folder,f'{model}_images_5x5.h5'),"r") as h5f:
+        # with h5.File(os.path.join(flags.data_folder,f'{model}_images_1x1.h5'),"r") as h5f:
             if (model == 'FPCD'):
-                energies.append(h5f['cluster_features'][-nevents_hard:, 1])
+                energies.append(h5f['truth_features'][-nevents_hard:, :1])
                 generated.append(h5f['calo_images'][-nevents_hard:])
             else:
                 energies.append(h5f['cluster'][:,:1])
@@ -172,12 +169,15 @@ else:
             return generated, energies
 
     if flags.model != 'all':
+        # models = ['FPCD']
         models = ['CaloScore', 'FPCD']
     else:
         # models = ['VPSDE','subVPSDE','VESDE','wgan','vae']
         # models = ['CaloScore', 'wgan']
         models = ['CaloScore', 'FPCD']
 
+    print("%"*30)
+    print(models)
     if flags.test:
         data, energies = LoadTest(flags.nevts)
         data_dict = {
@@ -214,6 +214,9 @@ else:
 
     
     #Plot high level distributions and compare with real values
+    print("%"*40)
+    print(true_energies)
+    print(energies)
     assert np.allclose(true_energies,energies), 'ERROR: Energies between samples dont match'
 
 
@@ -308,8 +311,11 @@ else:
     def AverageELayer(data_dict):
         
         def _preprocess(data):
-            #print(data.shape,total_evts,config['SHAPE'][1],-1)
-            preprocessed = np.reshape(data,(total_evts,config['SHAPE'][1],-1))
+            print(">"*10,data.shape,total_evts,config['SHAPE'][1],-1)
+            # preprocessed = np.transpose(data,(0,3,1,2,4))
+            preprocessed = np.reshape(data,(data.shape[0],
+                                                    config['SHAPE'][1],-1))
+            # preprocessed = np.reshape(data,(total_evts,config['SHAPE'][1],-1))
             preprocessed = np.sum(preprocessed,-1)
             #preprocessed = np.mean(preprocessed,0)
             return preprocessed
@@ -373,7 +379,7 @@ else:
     def HistNhits(data_dict):
 
         def _preprocess(data):
-            preprocessed = np.reshape(data,(data.shape[0],-1))
+            preprocessed = np.reshape(data,(data.shape[0], -1))
             return np.sum(preprocessed>0,-1)
         
         feed_dict = {}
@@ -388,7 +394,8 @@ else:
         return feed_dict
 
 
-    def Classifier(data_dict,gen_name='CaloScore'):
+    # def Classifier(data_dict,gen_name='CaloScore'):
+    def Classifier(data_dict,gen_name='FPCD'):
         from tensorflow import keras
         train = np.concatenate([data_dict['Geant4'],data_dict[gen_name]],0)
         labels = np.concatenate([np.zeros((data_dict['Geant4'].shape[0],1)),
@@ -449,7 +456,7 @@ else:
         cmap = plt.get_cmap('viridis').copy()
         cmap.set_bad("white")
         plt.rcParams['pcolor.shading'] ='nearest'
-        layer_number = [1,10]
+        layer_number = [1,5,10]
         
         def SetFig(xlabel,ylabel):
             fig = plt.figure(figsize=(8, 6))
@@ -492,7 +499,7 @@ else:
                 
                 
                 bar = ax.set_title("{}, layer number {}".format(key,layer),fontsize=15)
-                ax.set_xlim(1,130)
+                # ax.set_xlim(1,130)
 
                 fig.savefig('{}/FCC_{}2D_{}_{}_{}.pdf'.format(flags.plot_folder,key,layer,config['CHECKPOINT_NAME'],flags.model))
             
@@ -513,7 +520,7 @@ else:
         plot_routines['Shower width']=AverageShowerWidth        
         plot_routines['Energy per eta']=AverageEX
         plot_routines['Energy per phi']=AverageEY
-        # plot_routines['2D average shower']=Plot_Shower_2D
+        plot_routines['2D average shower']=Plot_Shower_2D
         plot_routines['Max voxel']=HistMaxELayer
         plot_routines['Class']=Classifier
         
